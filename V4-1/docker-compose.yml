@@ -1,0 +1,13 @@
+name: fcc-bluecollar-single
+services:
+  agent_worker:
+    image: fcc-agent-bluecollar:4.1 # Achte darauf, dass das Image existiert
+    pull_policy: never
+    shm_size: '1gb' 
+    ports:
+      - "8001:8001"  # <--- DAS LÖST DEIN N8N PROBLEM!
+    environment:
+      - HEADLESS=true
+      - API_HOST=0.0.0.0
+      - API_PORT=8001
+    restart: unless-stopped
