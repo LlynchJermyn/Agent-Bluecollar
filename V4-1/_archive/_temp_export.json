@@ -1,0 +1,32 @@
+[
+  {
+    "headers": {
+      "host": "192.168.178.87:5678",
+      "accept": "*/*",
+      "accept-encoding": "gzip, deflate",
+      "connection": "keep-alive",
+      "user-agent": "python-httpx/0.28.1",
+      "content-length": "833",
+      "content-type": "application/json"
+    },
+    "params": {},
+    "query": {},
+    "body": {
+      "store_id": 2653,
+      "address": "500 Lincoln Street Worcester, MA 01605",
+      "status": "success",
+      "broadband_type": "fixed",
+      "providers": [
+        "**Location Info:** Status: Not Served | Business | Unit Count: 4\n\n| Provider | Technology | Down (Mbps) | Up (Mbps) | Requests |\n| --- | --- | --- | --- | --- |\n| AT&T | Licensed Fixed Wireless | 25 | 3 |  |\n| HughesNet | GSO Satellite | 100 | 5 |  |\n| Starlink | NGSO Satellite | 280 | 30 |  |\n| Viasat Inc | GSO Satellite | 100 | 3 |  |\n| **Business-only Service** | --- | --- | --- | --- |\n| AT&T | Licensed Fixed Wireless | 10 | 1 |  |\n| Spectrum | Cable | 1000 | 35 |  |\n| Verizon | Licensed Fixed Wireless | 50 | 6 |  |\n| Viasat Inc | GSO Satellite | 50 | 4 |  |"
+      ],
+      "usage": {
+        "model": "pure-playwright-stealth (FIXED)",
+        "duration_seconds": 13.17,
+        "total_cost": 0,
+        "api_latency_bypassed": true
+      }
+    },
+    "webhookUrl": "http://192.168.178.87/webhook-test/fcc-results",
+    "executionMode": "test"
+  }
+]

@@ -1,7 +1,7 @@
 fastapi
 uvicorn
 pydantic
+httpx
 python-dotenv
 playwright
 playwright-stealth
-httpx
