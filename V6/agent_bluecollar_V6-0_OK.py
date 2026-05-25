@@ -1,7 +1,7 @@
 # ---------------------------------------------------------
-# AGENT BLUECOLLAR V6.1: PARALLEL & DIRECT-LINK EDITION
+# AGENT BLUECOLLAR V6.0: PARALLEL & DIRECT-LINK EDITION
 # Strategie: Native Linux, Globales Staggering, Klare Phasen-Logs
-# Fix: Docker WebGL-Wait & 50ms Hyper-Scan Raster
+# Fix: Fixed-Broadband nutzt nun den blitzschnellen Direktzugriff via URL
 # ---------------------------------------------------------
 
 import os
@@ -23,7 +23,7 @@ from playwright_stealth import Stealth
 
 load_dotenv()
 
-# --- VARIABLEN AUS .ENV (STRICT MODE) ---
+# --- VARIABLEN AUS .ENV (STRICT MODE - OHNE FALLBACKS) ---
 is_headless = os.environ["HEADLESS"].lower() == "true"
 GLOBAL_STAGGER_SECONDS = float(os.environ["GLOBAL_STAGGER_SECONDS"])
 TYPING_DELAY_MS = int(os.environ["TYPING_DELAY_MS"])
@@ -107,29 +107,21 @@ async def process_and_send_webhook(store_id: float, address: str, lat: float, lo
         
         async with Stealth().use_async(async_playwright()) as p:
             try:
-                logger.info(f"[{store_id}] 🚀 Starte nativen Chromium (Mit Anti-Throttling!)...")
+                logger.info(f"[{store_id}] 🚀 Starte nativen Chromium...")
                 browser = await p.chromium.launch(
                     headless=is_headless,
-                    args=[
-                        '--disable-http2', 
-                        '--no-sandbox', 
-                        '--disable-dev-shm-usage', 
-                        '--mute-audio',
-                        '--disable-background-timer-throttling',
-                        '--disable-backgrounding-occluded-windows',
-                        '--disable-renderer-backgrounding',
-                        '--use-gl=swiftshader' # Erzwingt die beste Software-Rendering Engine in Docker
-                    ]
+                    args=['--disable-http2', '--no-sandbox', '--disable-dev-shm-usage', '--mute-audio']
                 )
                 context = await browser.new_context(viewport={'width': 1920, 'height': 1080})
                 page = await context.new_page()
                 
                 # ==========================================
-                # PHASE 1: NAVIGATION & SUCHE
+                # PHASE 1: NAVIGATION & SUCHE (V6.0 Direkt-Links)
                 # ==========================================
                 logger.info(f"[{store_id}] 📍 === PHASE 1: DIREKT-LINK NAVIGATION ===")
                 if broadband_type == "fixed":
                     logger.info(f"[{store_id}] 🏠 Nutze FIXED Direktzugriff")
+                    # Zoom auf 16.99 erhöht für deutlich bessere Treffergenauigkeit!
                     resolved_url = f"https://broadbandmap.fcc.gov/location-summary/fixed?version=jun2025&addr_full={encoded_address}&lon={lon}&lat={lat}&zoom=16.99"
                     await page.goto(resolved_url, wait_until="domcontentloaded", timeout=PAGE_TIMEOUT_MS)
                 else:
@@ -138,64 +130,71 @@ async def process_and_send_webhook(store_id: float, address: str, lat: float, lo
                     await page.goto(resolved_url, wait_until="domcontentloaded", timeout=PAGE_TIMEOUT_MS)
 
                 # ==========================================
-                # PHASE 1.5: MAP KLICK (Hyper-Scan Raster)
+                # PHASE 1.5: MAP KLICK (Hochauflösender Spiral-Scanner)
                 # ==========================================
                 logger.info(f"[{store_id}] 🗺️ === PHASE 1.5: MAP KLICK (Suche grünen Punkt) ===")
-                
-                if "location_id=" in page.url:
-                    logger.info(f"[{store_id}] ✅ location_id bereits in URL! Überspringe Map-Scan.")
-                else:
-                    try:
-                        map_canvas = page.locator("canvas").first
-                        await map_canvas.wait_for(state="visible", timeout=15000)
+                try:
+                    map_canvas = page.locator("canvas").first
+                    await map_canvas.wait_for(state="visible", timeout=15000)
+                    
+                    # Warten, bis die Karte komplett gerendert und ruhig ist
+                    await page.wait_for_timeout(3500)
+                    
+                    box = await map_canvas.bounding_box()
+                    if box:
+                        cx = box["x"] + box["width"] / 2
+                        cy = box["y"] + box["height"] / 2
                         
-                        # 1. DER DOCKER CPU-RENDER BLOCKER
-                        logger.info(f"[{store_id}] ⏳ Warte 8 Sekunden, damit Docker WebGL aufbauen kann...")
-                        await page.wait_for_timeout(8000)
+                        # Dichtes, quadratisches Suchraster (10px, 20px, 30px)
+                        # So entwischt uns auch kein Punkt, der genau zwischen Lücken liegt!
+                        offsets = [
+                            (0, 0),
+                            (10, 0), (0, 10), (-10, 0), (0, -10),
+                            (10, 10), (-10, 10), (-10, -10), (10, -10),
+                            (20, 0), (0, 20), (-20, 0), (0, -20),
+                            (20, 10), (20, -10), (-20, 10), (-20, -10),
+                            (10, 20), (-10, 20), (10, -20), (-10, -20),
+                            (20, 20), (-20, 20), (-20, -20), (20, -20),
+                            (30, 0), (0, 30), (-30, 0), (0, -30)
+                        ]
                         
-                        # 2. DOUBLE-CLICK ZOOM BLOCKER INJIZIEREN
-                        await page.evaluate("""
-                            window.addEventListener('dblclick', e => { 
-                                e.stopPropagation(); 
-                                e.preventDefault(); 
-                            }, true);
-                        """)
+                        punkt_getroffen = False
+                        logger.info(f"[{store_id}] 🎯 Starte hochauflösenden Spiral-Scan...")
                         
-                        box = await map_canvas.bounding_box()
-                        if box:
-                            # Wir nutzen die echte, absolute Mitte des Canvas
-                            cx = box["x"] + box["width"] / 2
-                            cy = box["y"] + box["height"] / 2
+                        for ox, oy in offsets:
+                            await page.mouse.click(cx + ox, cy + oy)
                             
-                            # 3. GIGANTISCHES RASTER GENERIEREN (14 Ringe, 20px Schritte = 280px Radius)
-                            step = 20
-                            max_radius = 14
-                            offsets = [(0, 0)]
-                            for r in range(1, max_radius + 1): 
-                                for x in range(-r, r+1): offsets.append((x*step, -r*step))
-                                for y in range(-r+1, r+1): offsets.append((r*step, y*step))
-                                for x in range(r-1, -r-1, -1): offsets.append((x*step, r*step))
-                                for y in range(r-1, -r, -1): offsets.append((-r*step, y*step))
-                            
-                            punkt_getroffen = False
-                            logger.info(f"[{store_id}] 🎯 Starte Hyper-Scan um (X={cx}, Y={cy}) mit {len(offsets)} Punkten...")
-                            
-                            for ox, oy in offsets:
-                                # Extrem schneller Klick (Dank Double-Click Blocker gefahrlos!)
-                                await page.mouse.click(cx + ox, cy + oy, delay=10)
-                                await page.wait_for_timeout(50) # Kurze 50ms Pause für URL Update
+                            # Ultraschneller Check: Ändert sich die URL zu "location_id"?
+                            try:
+                                await page.wait_for_function("""
+                                    () => {
+                                        // Der absolute und sofortige Beweis, dass ein Map-Punkt getroffen wurde:
+                                        if (window.location.href.includes('location_id=')) return true;
+                                        
+                                        // Fallback, falls die URL mal zickt
+                                        const text = document.body.innerText || "";
+                                        const hasInfo = text.includes('Unit Count:') || text.includes('Status:');
+                                        const hasTable = document.querySelectorAll('table').length > 0;
+                                        
+                                        return hasInfo || hasTable;
+                                    }
+                                """, timeout=800, polling=100) # Nur 800ms Wartezeit! Macht den Scan rasend schnell.
                                 
-                                if "location_id=" in page.url:
-                                    logger.info(f"[{store_id}] ✅ BINGO! Grüner Punkt getroffen bei Offset ({ox}px, {oy}px)!")
-                                    punkt_getroffen = True
-                                    # Punkt getroffen -> Genügend Zeit geben, um Tabelle zu laden
-                                    await page.wait_for_timeout(3500) 
-                                    break
-                                    
-                            if not punkt_getroffen:
-                                logger.info(f"[{store_id}] ⚠️ Kein Punkt im 280px Raster gefunden.")
-                    except Exception as e:
-                        logger.warning(f"[{store_id}] ⚠️ Map-Scanner übersprungen: {e}")
+                                logger.info(f"[{store_id}] ✅ Grüner Punkt getroffen bei Offset ({ox}px, {oy}px)!")
+                                punkt_getroffen = True
+                                
+                                # WICHTIG: Jetzt warten wir in Ruhe 2 Sekunden, damit die Tabelle fertig laden kann, 
+                                # BEVOR Phase 2 startet. Wir klicken aber nicht mehr wild herum!
+                                await page.wait_for_timeout(2000) 
+                                break
+                            except:
+                                pass # Kein Treffer, probiere nächsten Klick-Offset...
+                        
+                        if not punkt_getroffen:
+                            logger.info(f"[{store_id}] ⚠️ Kein Punkt im Raster gefunden. Warte auf Fallback...")
+                            
+                except Exception as map_err:
+                    logger.warning(f"[{store_id}] ⚠️ Fehler beim Map-Scanner: {map_err}")
 
                 # ==========================================
                 # PHASE 2: DATEN-EXTRAKTION & FAST-FAIL
@@ -238,7 +237,7 @@ async def process_and_send_webhook(store_id: float, address: str, lat: float, lo
                                 finalOutput += "**Location Info:** " + cleanLoc + "\\n\\n";
                             }
 
-                            // 2. PRÄZISE TABELLENSUCHE
+                            // 2. PRÄZISE TABELLENSUCHE (Unverändert von V5)
                             const tables = Array.from(document.querySelectorAll('table'));
                             let target = null;
                             let dynamicTitle = "";
@@ -316,7 +315,7 @@ async def process_and_send_webhook(store_id: float, address: str, lat: float, lo
                     "status": "success",
                     "broadband_type": broadband_type,
                     "providers": [] if markdown_table == "EMPTY" else [markdown_table],
-                    "usage": {"duration_seconds": duration, "model": "v6.1-hyper-scanner"}
+                    "usage": {"duration_seconds": duration, "model": "v6.0-parallel-directlink"}
                 }
                 
             except Exception as e:
