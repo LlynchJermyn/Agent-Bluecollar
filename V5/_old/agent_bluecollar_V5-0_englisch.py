@@ -1,7 +1,7 @@
 # ---------------------------------------------------------
 # AGENT BLUECOLLAR V5.0: PARALLEL & CUSTOM LOGGING EDITION
 # Strategy: Native Linux/Mac, Global Staggering, Clear Phase-Logs
-# Fix: Removed Phase 1.5, routing via /home?version=dec2025 with redirect
+# Fix: Robust table search algorithm (Fixed: largest table)
 # ---------------------------------------------------------
 
 import os
@@ -121,7 +121,6 @@ async def process_and_send_webhook(store_id: float, address: str, lat: float, lo
                 # ==========================================
                 logger.info(f"[{store_id}] 📍 === PHASE 1: NAVIGATION & SEARCH ===")
                 if broadband_type == "fixed":
-                    logger.info(f"[{store_id}] 🏠 Using FIXED search logic via /home?version=dec2025")
                     await page.goto("https://broadbandmap.fcc.gov/home?version=dec2025", wait_until="domcontentloaded", timeout=PAGE_TIMEOUT_MS)
                     await page.wait_for_selector("#addrSearch", state="visible", timeout=15000)
                     
@@ -133,22 +132,19 @@ async def process_and_send_webhook(store_id: float, address: str, lat: float, lo
                     await dropdown.hover()
                     await page.wait_for_timeout(HOVER_DELAY_MS)
                     
-                    # Waiting for the redirect after clicking the dropdown item
                     async with page.expect_navigation(timeout=PAGE_TIMEOUT_MS):
                         await dropdown.click(force=True)
                     
                     resolved_url = page.url
-                    logger.info(f"[{store_id}] 🔗 Resolved URL after redirect: {resolved_url}")
+                    logger.info(f"[{store_id}] 🔗 Resolved URL: {resolved_url}")
                     
                     try:
                         await page.locator("a.nav-link:has-text('Fixed Broadband')").click(timeout=5000)
                     except: pass 
                 else:
                     logger.info(f"[{store_id}] 📱 Using MOBILE direct access")
-                    resolved_url = f"https://broadbandmap.fcc.gov/location-summary/mobile?version=dec2025&addr_full={encoded_address}&lon={lon}&lat={lat}&zoom=15.00&env=0&tech=tech4g"
+                    resolved_url = f"https://broadbandmap.fcc.gov/location-summary/mobile?version=jun2025&addr_full={encoded_address}&lon={lon}&lat={lat}&zoom=15.00&env=0&tech=tech4g"
                     await page.goto(resolved_url, wait_until="domcontentloaded", timeout=PAGE_TIMEOUT_MS)
-
-                # PHASE 1.5 REMOVED AS REQUESTED
 
                 # ==========================================
                 # PHASE 2: DATA EXTRACTION & FAST-FAIL
@@ -158,11 +154,12 @@ async def process_and_send_webhook(store_id: float, address: str, lat: float, lo
                     if broadband_type == "mobile":
                         try:
                             outdoor_tab = page.locator('button[role="tab"]:has-text("Outdoor Stationary")')
-                            # Reduced wait time to 3 seconds, silent pass on fail
+                            # Reduced wait time to 3 seconds for faster mobile processing
                             await outdoor_tab.wait_for(state="visible", timeout=3000)
                             await outdoor_tab.click(force=True)
                             await page.wait_for_timeout(500)
                         except:
+                            # Silently pass without logging if the tab is not found
                             pass
                     
                     # Polling the DOM until the table appears or a "no data" message is found
@@ -275,7 +272,7 @@ async def process_and_send_webhook(store_id: float, address: str, lat: float, lo
                     "status": "success",
                     "broadband_type": broadband_type,
                     "providers": [] if markdown_table == "EMPTY" else [markdown_table],
-                    "usage": {"duration_seconds": duration, "model": "v5.0-search-redirect"}
+                    "usage": {"duration_seconds": duration, "model": "v5.0-parallel-staggered"}
                 }
                 
             except Exception as e:
@@ -305,12 +302,12 @@ async def process_and_send_webhook(store_id: float, address: str, lat: float, lo
         except Exception as web_err:
             logger.error(f"[{store_id}] ❌ Webhook error: {web_err}")
 
-        # FINAL STATUS OUTPUT
+        # FINAL STATUS OUTPUT FOR EASY DEBUGGING
         logger.info(f"[{store_id}] 🏁 FINAL STATUS: {status_flag}")
 
 @app.post("/api/v1/fcc_agent_bluecollar")
 async def main(request: AddressRequest, background_tasks: BackgroundTasks):
-    logger.info(f"📥 Request for Store {request.store_id} added to processing queue.")
+    logger.info(f"📥 Request for Store {request.store_id} added to queue.")
     background_tasks.add_task(process_and_send_webhook, request.store_id, request.address, request.lat, request.lon, request.webhook_url, request.broadband_type)
     return {"status": "queued", "store_id": request.store_id}
 

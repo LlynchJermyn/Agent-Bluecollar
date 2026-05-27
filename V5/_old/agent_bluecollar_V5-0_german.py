@@ -1,7 +1,7 @@
 # ---------------------------------------------------------
 # AGENT BLUECOLLAR V5.0: PARALLEL & CUSTOM LOGGING EDITION
-# Strategy: Native Linux/Mac, Global Staggering, Clear Phase-Logs
-# Fix: Removed Phase 1.5, routing via /home?version=dec2025 with redirect
+# Strategie: Native Linux, Globales Staggering, Klare Phasen-Logs
+# Fix: Robuster Tabellen-Suchalgorithmus (Fixed: größte Tabelle)
 # ---------------------------------------------------------
 
 import os
@@ -23,7 +23,7 @@ from playwright_stealth import Stealth
 
 load_dotenv()
 
-# --- VARIABLES FROM .ENV (STRICT MODE - NO FALLBACKS) ---
+# --- VARIABLEN AUS .ENV (STRICT MODE - OHNE FALLBACKS) ---
 is_headless = os.environ["HEADLESS"].lower() == "true"
 GLOBAL_STAGGER_SECONDS = float(os.environ["GLOBAL_STAGGER_SECONDS"])
 TYPING_DELAY_MS = int(os.environ["TYPING_DELAY_MS"])
@@ -33,7 +33,7 @@ POLLING_TIMEOUT_MS = int(os.environ["POLLING_TIMEOUT_MS"])
 POLLING_INTERVAL_MS = int(os.environ["POLLING_INTERVAL_MS"])
 SHARED_LOCK_FILE = os.environ["SHARED_LOCK_FILE"]
 
-# --- LOGGING SETUP ---
+# --- LOGGING ---
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
@@ -49,7 +49,7 @@ agent_lock = None
 async def lifespan(app: FastAPI):
     global agent_lock
     agent_lock = asyncio.Lock()
-    logger.info("Startup: asyncio.Lock() initialized.")
+    logger.info("Startup: asyncio.Lock() initialisiert.")
     yield
 
 app = FastAPI(lifespan=lifespan)
@@ -63,7 +63,6 @@ class AddressRequest(BaseModel):
     broadband_type: str = "mobile"
 
 # --- CROSS-CONTAINER STAGGERING ---
-# Ensures a global delay between requests to prevent bot-detection
 async def wait_for_global_stagger(store_id: float):
     if GLOBAL_STAGGER_SECONDS <= 0: return
 
@@ -91,10 +90,10 @@ async def wait_for_global_stagger(store_id: float):
 
     wait_time = await asyncio.to_thread(_sync_lock)
     if wait_time > 0:
-        logger.info(f"[{store_id}] ⏳ Global staggering active: Waiting {wait_time:.2f} seconds...")
+        logger.info(f"[{store_id}] ⏳ Globales Staggering greift: Warte {wait_time:.2f} Sekunden...")
         await asyncio.sleep(wait_time)
 
-# --- CORE AGENT LOGIC ---
+# --- CORE LOGIK ---
 async def process_and_send_webhook(store_id: float, address: str, lat: float, lon: float, webhook_url: str, broadband_type: str):
     broadband_type = broadband_type.lower()
     encoded_address = urllib.parse.quote_plus(address)
@@ -108,7 +107,7 @@ async def process_and_send_webhook(store_id: float, address: str, lat: float, lo
         
         async with Stealth().use_async(async_playwright()) as p:
             try:
-                logger.info(f"[{store_id}] 🚀 Launching native Chromium...")
+                logger.info(f"[{store_id}] 🚀 Starte nativen Chromium...")
                 browser = await p.chromium.launch(
                     headless=is_headless,
                     args=['--disable-http2', '--no-sandbox', '--disable-dev-shm-usage', '--mute-audio']
@@ -117,15 +116,13 @@ async def process_and_send_webhook(store_id: float, address: str, lat: float, lo
                 page = await context.new_page()
                 
                 # ==========================================
-                # PHASE 1: NAVIGATION & SEARCH
+                # PHASE 1: NAVIGATION & SUCHE
                 # ==========================================
-                logger.info(f"[{store_id}] 📍 === PHASE 1: NAVIGATION & SEARCH ===")
+                logger.info(f"[{store_id}] 📍 === PHASE 1: NAVIGATION & SUCHE ===")
                 if broadband_type == "fixed":
-                    logger.info(f"[{store_id}] 🏠 Using FIXED search logic via /home?version=dec2025")
-                    await page.goto("https://broadbandmap.fcc.gov/home?version=dec2025", wait_until="domcontentloaded", timeout=PAGE_TIMEOUT_MS)
+                    await page.goto("https://broadbandmap.fcc.gov/home?version=jun2025", wait_until="domcontentloaded", timeout=PAGE_TIMEOUT_MS)
                     await page.wait_for_selector("#addrSearch", state="visible", timeout=15000)
                     
-                    # Simulating human typing
                     await page.locator("#addrSearch").press_sequentially(address, delay=TYPING_DELAY_MS)
                     
                     dropdown = page.locator(".search-results button, .search-results .dropdown-item").first
@@ -133,39 +130,34 @@ async def process_and_send_webhook(store_id: float, address: str, lat: float, lo
                     await dropdown.hover()
                     await page.wait_for_timeout(HOVER_DELAY_MS)
                     
-                    # Waiting for the redirect after clicking the dropdown item
                     async with page.expect_navigation(timeout=PAGE_TIMEOUT_MS):
                         await dropdown.click(force=True)
                     
                     resolved_url = page.url
-                    logger.info(f"[{store_id}] 🔗 Resolved URL after redirect: {resolved_url}")
+                    logger.info(f"[{store_id}] 🔗 Resolved URL: {resolved_url}")
                     
                     try:
                         await page.locator("a.nav-link:has-text('Fixed Broadband')").click(timeout=5000)
                     except: pass 
                 else:
-                    logger.info(f"[{store_id}] 📱 Using MOBILE direct access")
-                    resolved_url = f"https://broadbandmap.fcc.gov/location-summary/mobile?version=dec2025&addr_full={encoded_address}&lon={lon}&lat={lat}&zoom=15.00&env=0&tech=tech4g"
+                    logger.info(f"[{store_id}] 📱 Nutze MOBILE Direktzugriff")
+                    resolved_url = f"https://broadbandmap.fcc.gov/location-summary/mobile?version=jun2025&addr_full={encoded_address}&lon={lon}&lat={lat}&zoom=15.00&env=0&tech=tech4g"
                     await page.goto(resolved_url, wait_until="domcontentloaded", timeout=PAGE_TIMEOUT_MS)
 
-                # PHASE 1.5 REMOVED AS REQUESTED
-
                 # ==========================================
-                # PHASE 2: DATA EXTRACTION & FAST-FAIL
+                # PHASE 2: DATEN-EXTRAKTION & FAST-FAIL
                 # ==========================================
-                logger.info(f"[{store_id}] 📊 === PHASE 2: DATA EXTRACTION (Waiting max {POLLING_TIMEOUT_MS/1000}s) ===")
+                logger.info(f"[{store_id}] 📊 === PHASE 2: DATEN-EXTRAKTION (Warte max {POLLING_TIMEOUT_MS/1000}s) ===")
                 try:
                     if broadband_type == "mobile":
                         try:
                             outdoor_tab = page.locator('button[role="tab"]:has-text("Outdoor Stationary")')
-                            # Reduced wait time to 3 seconds, silent pass on fail
-                            await outdoor_tab.wait_for(state="visible", timeout=3000)
+                            await outdoor_tab.wait_for(state="visible", timeout=15000)
                             await outdoor_tab.click(force=True)
                             await page.wait_for_timeout(500)
                         except:
-                            pass
+                            logger.info(f"[{store_id}] ⚠️ Konnte 'Outdoor Stationary' Tab nicht klicken. Vertraue auf Default.")
                     
-                    # Polling the DOM until the table appears or a "no data" message is found
                     await page.wait_for_function("""
                         () => {
                             const tables = document.querySelectorAll('table');
@@ -181,32 +173,31 @@ async def process_and_send_webhook(store_id: float, address: str, lat: float, lo
                         }
                     """, timeout=POLLING_TIMEOUT_MS, polling=POLLING_INTERVAL_MS)
                     
-                    # JavaScript execution for Markdown table generation
                     markdown_table = await page.evaluate("""(type) => {
                         try {
                             let finalOutput = "";
                             const bodyText = document.body.innerText || "";
                             
-                            // 1. EXTRACT LOCATION INFO
+                            // 1. LOCATION INFO
                             const locationMatch = bodyText.match(/[^\\n]*Unit Count:[^\\n]*/i);
                             if (locationMatch) {
                                 let cleanLoc = locationMatch[0].replace(/\\s+/g, ' ').trim();
                                 finalOutput += "**Location Info:** " + cleanLoc + "\\n\\n";
                             }
 
-                            // 2. PRECISE TABLE SEARCH
+                            // 2. PRÄZISE TABELLENSUCHE (Modifiziert nach deinen Vorgaben!)
                             const tables = Array.from(document.querySelectorAll('table'));
                             let target = null;
                             let dynamicTitle = "";
 
                             if (type === "fixed") {
-                                // FIXED: ALWAYS take the table with the most rows. No text check!
+                                // FIXED: Nimm IMMER die Tabelle mit den meisten Reihen. Keine Textprüfung!
                                 if (tables.length > 0) {
                                     target = tables.reduce((prev, curr) => (prev.rows.length > curr.rows.length) ? prev : curr, {rows: []});
                                 }
                                 dynamicTitle = "Broadband Availability"; 
                             } else {
-                                // MOBILE: Ensure "In Vehicle" is not active, then search table
+                                // MOBILE: Sicherstellen, dass "In Vehicle" nicht aktiv ist, dann Tabellensuche
                                 let activeTab = document.querySelector('.nav-link.active, [aria-selected="true"]');
                                 if (activeTab && activeTab.innerText.includes("In Vehicle")) {
                                    return finalOutput ? finalOutput + "*Falscher Mobile-Tab geladen (In Vehicle statt Outdoor)*" : "EMPTY";
@@ -215,7 +206,7 @@ async def process_and_send_webhook(store_id: float, address: str, lat: float, lo
                                 target = tables.find(t => t.innerText && (t.innerText.includes("5G-NR") || t.innerText.includes("4G LTE")));
                                 dynamicTitle = "Mobile Availability (Outdoor Stationary)";
                                 
-                                // Fallback for Mobile
+                                // Fallback für Mobile
                                 if (!target && tables.length > 0) {
                                     target = tables.reduce((prev, curr) => (prev.rows.length > curr.rows.length) ? prev : curr, {rows: []});
                                 }
@@ -225,10 +216,10 @@ async def process_and_send_webhook(store_id: float, address: str, lat: float, lo
                                 return finalOutput ? finalOutput + "*Keine passende Provider-Tabelle gefunden*" : "EMPTY";
                             }
                             
-                            // 3. ADD HEADLINE
+                            // 3. ÜBERSCHRIFT EINFÜGEN
                             finalOutput += "### " + dynamicTitle + "\\n\\n";
 
-                            // 4. BUILD MARKDOWN TABLE
+                            // 4. MARKDOWN TABELLE BAUEN
                             let md = "";
                             let colsCount = target.rows[0].cells.length;
                             
@@ -260,9 +251,9 @@ async def process_and_send_webhook(store_id: float, address: str, lat: float, lo
                         }
                     }""", broadband_type)
                     
-                    logger.info(f"[{store_id}] ✅ Data extraction finished.")
+                    logger.info(f"[{store_id}] ✅ Extraktion der Daten beendet.")
                 except Exception as e:
-                    logger.warning(f"[{store_id}] ⚠️ Timeout reached or empty address.")
+                    logger.warning(f"[{store_id}] ⚠️ Timeout oder leere Adresse erreicht.")
                     markdown_table = "EMPTY"
                 
                 await browser.close()
@@ -275,11 +266,11 @@ async def process_and_send_webhook(store_id: float, address: str, lat: float, lo
                     "status": "success",
                     "broadband_type": broadband_type,
                     "providers": [] if markdown_table == "EMPTY" else [markdown_table],
-                    "usage": {"duration_seconds": duration, "model": "v5.0-search-redirect"}
+                    "usage": {"duration_seconds": duration, "model": "v5.0-parallel-staggered"}
                 }
                 
             except Exception as e:
-                logger.error(f"[{store_id}] ERROR: {e}")
+                logger.error(f"[{store_id}] FEHLER: {e}")
                 final_payload = {
                     "store_id": store_id, 
                     "broadband_type": broadband_type, 
@@ -289,28 +280,23 @@ async def process_and_send_webhook(store_id: float, address: str, lat: float, lo
                 }
 
         # ==========================================
-        # WEBHOOK DISPATCH & FINAL STATUS LOGGING
+        # WEBHOOK VERSAND & ERGEBNIS-LOGGING
         # ==========================================
-        status_flag = "FAIL"
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 await client.post(webhook_url, json=final_payload)
                 
                 if final_payload.get("status") == "success" and len(final_payload.get("providers", [])) > 0:
-                    logger.info(f"[{store_id}] ✅ Provider data successfully transmitted")
-                    status_flag = "SUCCESS"
+                    logger.info(f"[{store_id}] ✅ Provider-Daten übermittelt")
                 else:
-                    logger.info(f"[{store_id}] ❌ Sending error: no Provider data for Store-ID {store_id}")
+                    logger.info(f"[{store_id}] ❌ Fehlermeldung senden: keine Provider Daten für Store-ID {store_id}")
                     
         except Exception as web_err:
-            logger.error(f"[{store_id}] ❌ Webhook error: {web_err}")
-
-        # FINAL STATUS OUTPUT
-        logger.info(f"[{store_id}] 🏁 FINAL STATUS: {status_flag}")
+            logger.error(f"[{store_id}] ❌ Webhook Fehler: {web_err}")
 
 @app.post("/api/v1/fcc_agent_bluecollar")
 async def main(request: AddressRequest, background_tasks: BackgroundTasks):
-    logger.info(f"📥 Request for Store {request.store_id} added to processing queue.")
+    logger.info(f"📥 Request für Store {request.store_id} in Queue aufgenommen.")
     background_tasks.add_task(process_and_send_webhook, request.store_id, request.address, request.lat, request.lon, request.webhook_url, request.broadband_type)
     return {"status": "queued", "store_id": request.store_id}
 
