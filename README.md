@@ -1,4 +1,4 @@
-# Agent Bluecollar V5 - Distributed Broadband Mapping Scraper
+# Agent Bluecollar - Distributed Broadband Mapping Scraper
 
 Agent Bluecollar is a highly resilient, multi-agent automation tool designed to extract reliable broadband connectivity data from the FCC Broadband Map. Built with Python, FastAPI, and Playwright, it utilizes stealth browser techniques to bypass basic bot protection and retrieve both mobile and fixed broadband availability data.
 
