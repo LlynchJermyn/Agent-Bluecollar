@@ -15,7 +15,7 @@ services:
     volumes:
       - shared_data:/shared  
     deploy:
-      replicas: 2  # of agents
+      replicas: 5  # of agents
     restart: unless-stopped
 
   nginx:
