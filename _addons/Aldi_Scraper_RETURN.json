@@ -1,0 +1,493 @@
+{
+  "name": "Aldi_Scraper_RETURN",
+  "nodes": [
+    {
+      "parameters": {
+        "tableId": "usage_logs",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "store_id",
+              "fieldValue": "={{ $json[\"body.store_id\"] }}"
+            },
+            {
+              "fieldId": "duration_sec",
+              "fieldValue": "={{ $json[\"body.usage.duration_seconds\"] }}"
+            },
+            {
+              "fieldId": "broadband_type",
+              "fieldValue": "={{ $json[\"body.broadband_type\"] }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        352,
+        208
+      ],
+      "id": "8f022567-aae6-4dca-a3a3-0786d8e5cd71",
+      "name": "Add Costs to Database",
+      "credentials": {
+        "supabaseApi": {
+          "id": "SfY8xhRI6kLVG6OJ",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "fcc-results",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -832,
+        208
+      ],
+      "id": "e36a528b-a13e-4698-bdad-a910593489ad",
+      "name": "Webhook",
+      "webhookId": "b57913ad-a1ce-45ad-ab12-d2c319aa206b"
+    },
+    {
+      "parameters": {
+        "chatId": "28266848",
+        "text": "=N8N Aldi Scraper: Site-ID: Error BB {{ $json.store_id }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        576,
+        48
+      ],
+      "id": "78aee942-5361-4f37-b7da-df2f00c24512",
+      "name": "Error Message BOT",
+      "webhookId": "83acf131-06d7-490e-be64-e593b51ea4e4",
+      "credentials": {
+        "telegramApi": {
+          "id": "r6RYDxJyOILF3AZy",
+          "name": "Telegram n8nBOT"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "tableId": "webhook_log_data",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "store_id",
+              "fieldValue": "={{ $json.body.store_id }}"
+            },
+            {
+              "fieldId": "log_message",
+              "fieldValue": "=no provider information polled"
+            },
+            {
+              "fieldId": "target_url",
+              "fieldValue": "={{ $json.body.resolved_url }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        352,
+        48
+      ],
+      "id": "8f029517-bd33-4fc5-b33e-550e9ef38186",
+      "name": "Error in DB",
+      "credentials": {
+        "supabaseApi": {
+          "id": "SfY8xhRI6kLVG6OJ",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Überprüft, ob die Provider-Tabelle leer ist\nreturn $input.all().map(item => {\n  // WICHTIG: Hier greifen wir auf das verschachtelte Objekt zu (body -> providers)\n  // Das ?. (Optional Chaining) schützt vor Fehlern, falls \"body\" mal komplett fehlt\n  const p = item.json.body?.providers;\n  \n  return {\n    json: {\n      // Kopiert alle ursprünglichen Felder\n      ...item.json, \n      \n      // True, wenn leer, null, nicht vorhanden oder leeres Array. False, wenn Daten da sind.\n      error: !p || (Array.isArray(p) && p.length === 0) || p === \"\"\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -672,
+        208
+      ],
+      "id": "e74a0903-3a28-4ab6-8691-2751a42c08d0",
+      "name": "Check Provider"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "e9df084b-b2ff-4994-ae1a-ab59c178e4d6",
+              "leftValue": "={{ $json.error }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -512,
+        208
+      ],
+      "id": "7de6e455-4657-4ec4-918d-eff8c0247204",
+      "name": "Check Providers"
+    },
+    {
+      "parameters": {
+        "jsCode": "const finalResult = [];\n\nfor (const item of $input.all()) {\n  const storeId = item.json[\"body.store_id\"] || (item.json.body && item.json.body.store_id);\n  const address = item.json[\"body.address\"] || (item.json.body && item.json.body.address);\n  const broadbandType = item.json[\"body.broadband_type\"] || (item.json.body && item.json.body.broadband_type);\n  const providersData = item.json[\"body.providers\"] || (item.json.body && item.json.body.providers);\n  \n  if (!providersData || providersData === \"EMPTY\") continue;\n\n  const markdownText = Array.isArray(providersData) ? providersData[0] : providersData;\n  const lines = markdownText.split('\\n');\n  \n  const extractedProviders = [];\n  let locationInfo = \"\";\n  let serviceCategory = \"General\"; \n\n  for (let line of lines) {\n    line = line.trim();\n\n    // 1. Location Info extrahieren\n    if (line.startsWith(\"**Location Info:**\")) {\n      locationInfo = line.replace(\"**Location Info:**\", \"\").trim();\n      continue;\n    }\n\n    // 2. NEU: Markdown Überschriften als Kategorie erkennen (z.B. ### Broadband Availability)\n    if (line.startsWith(\"#\")) {\n      serviceCategory = line.replace(/#/g, \"\").trim();\n      continue;\n    }\n\n    // Überspringe leere Zeilen oder Trenner\n    if (!line || line.includes(\"| --- |\")) continue;\n\n    // 3. Tabellenzeilen verarbeiten\n    if (line.startsWith(\"|\")) {\n      const columns = line.split('|')\n                          .map(col => col.trim())\n                          .filter((col, index, arr) => !(index === 0 && col === \"\") && !(index === arr.length - 1 && col === \"\"));\n\n      // 3a. NEU: Erkennung von Kategorien INNERHALB der Tabelle \n      // (Wenn Spalte 1 Text hat, aber Spalte 2 & 3 komplett leer sind)\n      const isSubHeader = columns.length >= 1 && columns[0] !== \"\" && (!columns[1] || columns[1] === \"\") && (!columns[2] || columns[2] === \"\");\n      \n      if (isSubHeader && !columns[0].toLowerCase().includes(\"provider\")) {\n        serviceCategory = columns[0].replace(/\\*/g, \"\").trim();\n        continue; // Diese Zeile nicht als Provider speichern\n      }\n\n      // Überspringe Header-Zeile\n      if (columns[0].toLowerCase().includes(\"provider\")) continue;\n\n      // 4. Echte Datenzeile verarbeiten\n      if (columns.length >= 4 && columns[0] !== \"\") {\n        let providerFull = columns[0].replace(/\\*/g, \"\").trim();\n        let providerShort = providerFull;\n        if (providerFull.includes(\" Holding Company\")) {\n            providerShort = providerFull.split(\" Holding Company\")[0].trim();\n        }\n\n        extractedProviders.push({\n          store_id: storeId,\n          address: address,\n          location_info: locationInfo,\n          service_category: serviceCategory, \n          provider: providerFull,\n          provider_short: providerShort,\n          technology: columns[1] || \"\",\n          down_mbps: columns[2] ? Number(columns[2].replace(/[^0-9.]/g, '')) : null,\n          up_mbps: columns[3] ? Number(columns[3].replace(/[^0-9.]/g, '')) : null,\n          requests: columns[4] || null\n        });\n      }\n    }\n  }\n\n  // Finaler Output: Jede Zeile ein Item\n  if (extractedProviders.length > 0) {\n    for (let p of extractedProviders) {\n      finalResult.push({\n        json: {\n          broadband_type: broadbandType || \"unknown\",\n          ...p\n        }\n      });\n    }\n  }\n}\n\nreturn finalResult;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        16,
+        448
+      ],
+      "id": "ed78818c-ed1e-47b1-84c2-f31478408e21",
+      "name": "Prepare Providers"
+    },
+    {
+      "parameters": {
+        "tableId": "mobile_broadband_mapping_us",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "address",
+              "fieldValue": "={{ $json.address }}"
+            },
+            {
+              "fieldId": "provider_name",
+              "fieldValue": "={{ $json.provider_short }}"
+            },
+            {
+              "fieldId": "3g",
+              "fieldValue": "={{ $json[\"3g\"] }}"
+            },
+            {
+              "fieldId": "4g_lte",
+              "fieldValue": "={{ $json[\"4g_lte\"] }}"
+            },
+            {
+              "fieldId": "5g_nr",
+              "fieldValue": "={{ $json[\"5g_nr\"] }}"
+            },
+            {
+              "fieldId": "provider_short",
+              "fieldValue": "={{ $json.provider_short }}"
+            },
+            {
+              "fieldId": "store_id",
+              "fieldValue": "={{ $json.store_id }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        352,
+        528
+      ],
+      "id": "4651f29c-7259-4982-9670-d20c2bfc1db9",
+      "name": "Mobile Provider to Database",
+      "credentials": {
+        "supabaseApi": {
+          "id": "SfY8xhRI6kLVG6OJ",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.broadband_type }}",
+                    "rightValue": "fixed",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "eb8bb08d-301f-4528-b558-3e62cd2aa75b"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "e0b5787b-9e87-4d8f-a012-6fba18c0b1d7",
+                    "leftValue": "={{ $json.broadband_type }}",
+                    "rightValue": "mobile",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        160,
+        448
+      ],
+      "id": "d2752cab-60b4-4612-9b64-b2bddea92952",
+      "name": "Switch Fixed / Mobile"
+    },
+    {
+      "parameters": {
+        "tableId": "fixed_broadband_mapping_us",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "address",
+              "fieldValue": "={{ $json.address }}"
+            },
+            {
+              "fieldId": "provider_short",
+              "fieldValue": "={{ $json.provider_short }}"
+            },
+            {
+              "fieldId": "technology",
+              "fieldValue": "={{ $json.technology }}"
+            },
+            {
+              "fieldId": "down_mpbs",
+              "fieldValue": "={{ $json.down_mbps }}"
+            },
+            {
+              "fieldId": "up_mbps",
+              "fieldValue": "={{ $json.up_mbps }}"
+            },
+            {
+              "fieldId": "location_info",
+              "fieldValue": "={{ $json.location_info }}"
+            },
+            {
+              "fieldId": "store_id",
+              "fieldValue": "={{ $json.store_id }}"
+            },
+            {
+              "fieldId": "service_category",
+              "fieldValue": "={{ $json.service_category }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        352,
+        368
+      ],
+      "id": "67ca637b-ccb7-4725-81f0-d17b7efc719b",
+      "name": "Fixed Provider to DB",
+      "credentials": {
+        "supabaseApi": {
+          "id": "SfY8xhRI6kLVG6OJ",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "body.store_id, body.address, body.providers, body.broadband_type",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        -128,
+        448
+      ],
+      "id": "788297fb-6e7c-45d7-8897-103e7d54557c",
+      "name": "Split Out Providers",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "body.usage.duration_seconds, body.store_id, body.broadband_type",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        -128,
+        224
+      ],
+      "id": "f0baf2d7-a9cd-4068-a997-269849e8b4d6",
+      "name": "Split-Out Duration"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Check Provider",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error in DB": {
+      "main": [
+        [
+          {
+            "node": "Error Message BOT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Provider": {
+      "main": [
+        [
+          {
+            "node": "Check Providers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Providers": {
+      "main": [
+        [
+          {
+            "node": "Error in DB",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Split Out Providers",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Split-Out Duration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Providers": {
+      "main": [
+        [
+          {
+            "node": "Switch Fixed / Mobile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch Fixed / Mobile": {
+      "main": [
+        [
+          {
+            "node": "Fixed Provider to DB",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mobile Provider to Database",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out Providers": {
+      "main": [
+        [
+          {
+            "node": "Prepare Providers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split-Out Duration": {
+      "main": [
+        [
+          {
+            "node": "Add Costs to Database",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "6e89dbc9-a229-45a0-872f-2fd07a82553f",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "eed07403ff061a7b72a98b1847efe83417182ad192b6d88a40f7f2b86bd45bf3"
+  },
+  "id": "UsHtdZy7Dn7AqNlY",
+  "tags": []
+}
