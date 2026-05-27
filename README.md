@@ -16,23 +16,6 @@ The system is built for horizontal scalability:
 1.  **Nginx Loadbalancer:** Acts as the entry point, distributing incoming API requests via round-robin with dynamic internal DNS resolution.
 2.  **FastAPI Worker Replicas:** Multiple Playwright agents running in parallel, sharing a synchronized data volume to coordinate global wait times using Semaphores.
 3.  **Headless Control:** Full control over UI rendering for debugging vs. production environments via `.env` configurations.
-
-
-## 📋 API Usage
-
-**Endpoint:** `POST /api/v1/fcc_agent_bluecollar`
-
-**Payload Example:**
-```json
-{
-  "store_id": 1045,
-  "address": "123 Main St, New York, NY",
-  "lat": 40.7128,
-  "lon": -74.0060,
-  "broadband_type": "mobile" OR "fixed",
-  "webhook_url": "[https://your-backend.com/webhook/receive](https://your-backend.com/webhook/receive)"
-}
-
 ## ⚙️ Configuration (Environment Variables)
 
 The agent is entirely configured via a `.env` file. Create a `.env` file in the root directory based on the following structure before starting the system:
@@ -58,3 +41,20 @@ POLLING_INTERVAL_MS=500
 
 # System (Internal)
 SHARED_LOCK_FILE=/shared/stagger.lock
+
+```
+
+## 📋 API Usage
+
+**Endpoint:** `POST /api/v1/fcc_agent_bluecollar`
+
+**Payload Example:**
+```json
+{
+  "store_id": 1045,
+  "address": "123 Main St, New York, NY",
+  "lat": 40.7128,
+  "lon": -74.0060,
+  "broadband_type": "mobile" OR "fixed",
+  "webhook_url": "[https://your-backend.com/webhook/receive](https://your-backend.com/webhook/receive)"
+}
