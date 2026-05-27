@@ -32,10 +32,12 @@ PAGE_TIMEOUT_MS = int(os.environ["PAGE_TIMEOUT_MS"])
 POLLING_TIMEOUT_MS = int(os.environ["POLLING_TIMEOUT_MS"])
 POLLING_INTERVAL_MS = int(os.environ["POLLING_INTERVAL_MS"])
 SHARED_LOCK_FILE = os.environ["SHARED_LOCK_FILE"]
+LOG_LEVEL_STR = os.environ.get("LOG_LEVEL", "INFO").upper()
+MAX_CONCURRENT_BROWSERS = int(os.environ.get("MAX_CONCURRENT_BROWSERS", "2"))
 
 # --- LOGGING SETUP ---
 logging.basicConfig(
-    level=logging.INFO,
+    level=getattr(logging, LOG_LEVEL_STR, logging.INFO),
     format="%(asctime)s | %(levelname)s | %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
     stream=sys.stdout,
@@ -44,14 +46,13 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # --- CONCURRENCY CONTROL ---
-MAX_CONCURRENT_BROWSERS = 2 
 agent_semaphore = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global agent_semaphore
     agent_semaphore = asyncio.Semaphore(MAX_CONCURRENT_BROWSERS)
-    logger.info(f"Startup: asyncio.Semaphore({MAX_CONCURRENT_BROWSERS}) initialized.")
+    logger.info(f"Startup: asyncio.Semaphore({MAX_CONCURRENT_BROWSERS}) initialized with LOG_LEVEL={LOG_LEVEL_STR}.")
     yield
 
 app = FastAPI(lifespan=lifespan)
@@ -162,7 +163,6 @@ async def process_and_send_webhook(store_id: float, address: str, lat: float, lo
                     if broadband_type == "mobile":
                         try:
                             outdoor_tab = page.locator('button[role="tab"]:has-text("Outdoor Stationary")')
-                            # Reduced wait time to 3 seconds, silent pass on fail
                             await outdoor_tab.wait_for(state="visible", timeout=3000)
                             await outdoor_tab.click(force=True)
                             await page.wait_for_timeout(500)

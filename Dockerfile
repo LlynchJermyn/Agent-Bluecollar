@@ -1,10 +1,9 @@
-# Offizielles Microsoft Playwright Image
+# official Microsoft Playwright Image
 FROM mcr.microsoft.com/playwright/python:v1.44.0-jammy
 
 USER root
 
-# BROWSER-USE ANSATZ: 
-# Installation des virtuellen Monitors (Xvfb) UND des massiven Desktop-Font-Pakets.
+# installation virtual Monitor (Xvfb) including Desktop-Font-Pakets.
 RUN apt-get update && apt-get install -y \
     xvfb \
     fontconfig \
@@ -25,18 +24,17 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Playwright Chromium nativ mit allen Dependencies installieren
+# Playwright Chromium native
 RUN playwright install chromium
 RUN playwright install-deps chromium
 
-# KORREKTUR: Muss in einer Zeile stehen
+
 COPY . . 
 
-# Nur systemkritische Umgebungsvariablen hier behalten
 ENV PYTHONUNBUFFERED=1
 
-# Expose muss mit dem API_PORT aus der .env übereinstimmen
+# Expose must align with the port used in the .env
 EXPOSE 8001
 
-# Starte Xvfb und führe Python unbuffered aus
+# Starte Xvfb and Python script
 CMD ["sh", "-c", "xvfb-run -a --server-args='-screen 0 1920x1080x24' python -u agent_bluecollar_V5-0.py"]
