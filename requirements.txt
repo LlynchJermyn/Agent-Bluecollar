@@ -5,3 +5,4 @@ httpx
 python-dotenv
 playwright
 playwright-stealth
+filelock

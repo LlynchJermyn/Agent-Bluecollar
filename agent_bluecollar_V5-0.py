@@ -1,7 +1,7 @@
 # ---------------------------------------------------------
 # AGENT BLUECOLLAR V5.0: PARALLEL & CUSTOM LOGGING EDITION
-# Strategy: Native Linux/Mac, Global Staggering, Clear Phase-Logs
-# Fix: Removed Phase 1.5, routing via /home?version=dec2025 with redirect
+# Strategy: Native Linux/Mac/Windows, Global Staggering, Clear Phase-Logs
+# Fix: Removed Phase 1.5, routing via /home?version=dec2025 with redirect, FileLock for cross-platform
 # ---------------------------------------------------------
 
 import os
@@ -11,12 +11,12 @@ import urllib.parse
 import time
 import httpx
 import logging
-import fcntl
 from contextlib import asynccontextmanager
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from fastapi import FastAPI, BackgroundTasks
 import uvicorn
+from filelock import FileLock
 
 from playwright.async_api import async_playwright
 from playwright_stealth import Stealth
@@ -24,7 +24,7 @@ from playwright_stealth import Stealth
 load_dotenv()
 
 # --- VARIABLES FROM .ENV (STRICT MODE - NO FALLBACKS) ---
-is_headless = os.environ["HEADLESS"].lower() == "true"
+is_headless = os.environ.get("HEADLESS", "true").lower() == "true"
 GLOBAL_STAGGER_SECONDS = float(os.environ["GLOBAL_STAGGER_SECONDS"])
 TYPING_DELAY_MS = int(os.environ["TYPING_DELAY_MS"])
 HOVER_DELAY_MS = int(os.environ["HOVER_DELAY_MS"])
@@ -43,13 +43,15 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-agent_lock = None
+# --- CONCURRENCY CONTROL ---
+MAX_CONCURRENT_BROWSERS = 2 
+agent_semaphore = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global agent_lock
-    agent_lock = asyncio.Lock()
-    logger.info("Startup: asyncio.Lock() initialized.")
+    global agent_semaphore
+    agent_semaphore = asyncio.Semaphore(MAX_CONCURRENT_BROWSERS)
+    logger.info(f"Startup: asyncio.Semaphore({MAX_CONCURRENT_BROWSERS}) initialized.")
     yield
 
 app = FastAPI(lifespan=lifespan)
@@ -62,32 +64,36 @@ class AddressRequest(BaseModel):
     webhook_url: str
     broadband_type: str = "mobile"
 
-# --- CROSS-CONTAINER STAGGERING ---
+# --- CROSS-CONTAINER STAGGERING (CROSS-PLATFORM SAFE) ---
 # Ensures a global delay between requests to prevent bot-detection
 async def wait_for_global_stagger(store_id: float):
     if GLOBAL_STAGGER_SECONDS <= 0: return
 
     def _sync_lock():
         os.makedirs(os.path.dirname(SHARED_LOCK_FILE), exist_ok=True)
-        with open(SHARED_LOCK_FILE, "a+") as f:
-            fcntl.flock(f, fcntl.LOCK_EX) 
-            f.seek(0)
-            content = f.read().strip()
-            last_start = float(content) if content else 0.0
-            
-            now = time.time()
-            elapsed = now - last_start
-            wait_time = 0.0
-            
-            if elapsed < GLOBAL_STAGGER_SECONDS:
-                wait_time = GLOBAL_STAGGER_SECONDS - elapsed
+        lock_path = f"{SHARED_LOCK_FILE}.lock"
+        
+        # FileLock handles the locking across different OS / Docker volumes safely
+        with FileLock(lock_path, timeout=10): 
+            if not os.path.exists(SHARED_LOCK_FILE):
+                open(SHARED_LOCK_FILE, 'w').close()
+
+            with open(SHARED_LOCK_FILE, "r+") as f:
+                content = f.read().strip()
+                last_start = float(content) if content else 0.0
                 
-            f.seek(0)
-            f.truncate()
-            f.write(str(now + wait_time))
-            f.flush()
-            fcntl.flock(f, fcntl.LOCK_UN)
-            return wait_time
+                now = time.time()
+                elapsed = now - last_start
+                wait_time = 0.0
+                
+                if elapsed < GLOBAL_STAGGER_SECONDS:
+                    wait_time = GLOBAL_STAGGER_SECONDS - elapsed
+                    
+                f.seek(0)
+                f.truncate()
+                f.write(str(now + wait_time))
+                f.flush()
+                return wait_time
 
     wait_time = await asyncio.to_thread(_sync_lock)
     if wait_time > 0:
@@ -102,7 +108,7 @@ async def process_and_send_webhook(store_id: float, address: str, lat: float, lo
     
     await wait_for_global_stagger(store_id)
     
-    async with agent_lock:
+    async with agent_semaphore:
         start_time = time.time()
         final_payload = {}
         
@@ -147,8 +153,6 @@ async def process_and_send_webhook(store_id: float, address: str, lat: float, lo
                     logger.info(f"[{store_id}] 📱 Using MOBILE direct access")
                     resolved_url = f"https://broadbandmap.fcc.gov/location-summary/mobile?version=dec2025&addr_full={encoded_address}&lon={lon}&lat={lat}&zoom=15.00&env=0&tech=tech4g"
                     await page.goto(resolved_url, wait_until="domcontentloaded", timeout=PAGE_TIMEOUT_MS)
-
-                # PHASE 1.5 REMOVED AS REQUESTED
 
                 # ==========================================
                 # PHASE 2: DATA EXTRACTION & FAST-FAIL

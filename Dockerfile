@@ -5,7 +5,6 @@ USER root
 
 # BROWSER-USE ANSATZ: 
 # Installation des virtuellen Monitors (Xvfb) UND des massiven Desktop-Font-Pakets.
-# Das sorgt für ein natürliches Canvas-Rendering und eine echte Linux-Signatur.
 RUN apt-get update && apt-get install -y \
     xvfb \
     fontconfig \
@@ -30,13 +29,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN playwright install chromium
 RUN playwright install-deps chromium
 
-COPY . .
+# KORREKTUR: Muss in einer Zeile stehen
+COPY . . 
 
-# Unbuffered Output für Echtzeit-Logs
+# Nur systemkritische Umgebungsvariablen hier behalten
 ENV PYTHONUNBUFFERED=1
-ENV HEADLESS=false
-ENV API_PORT=8001
 
+# Expose muss mit dem API_PORT aus der .env übereinstimmen
 EXPOSE 8001
 
 # Starte Xvfb und führe Python unbuffered aus
