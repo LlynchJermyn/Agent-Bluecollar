@@ -1,5 +1,0 @@
-URL1
-https://broadbandmap.fcc.gov/location-summary/fixed?addr_full=1890%20West%20Front%20Street,%20Berwick,%20Pennsylvania%2018603,%20United%20States&lon=-76.266183&lat=41.047321
-
-URL2
-https://broadbandmap.fcc.gov/location-summary/fixed?version=jun2025&location_id=28ba5e31-d79e-4f72-84fc-e21a7a659430&zoom=17.25&vlon=-76.266183&vlat=41.047321&br=r&speed=100_20&tech=1_2_3_6_7

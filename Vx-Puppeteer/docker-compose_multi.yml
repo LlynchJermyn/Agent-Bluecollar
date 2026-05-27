@@ -1,0 +1,39 @@
+#compose multi agents
+name: fcc-bluecollar-puppeteer
+services:
+  bluecollar-agent:
+    build: .
+    image: bluecollar-agent-puppeteer:5.0
+    restart: unless-stopped
+    # PORTS ENTFERNT! NGINX übernimmt jetzt das Routing von außen nach innen.
+    environment:
+      - HEADLESS=false # (Muss für unseren Xvfb-Monitor auf false stehen!)
+      - API_PORT=8001
+      # Zeitzone (hilft manchmal bei Geolocation-Sachen)
+      - TZ=Europe/Berlin
+    deploy:
+      replicas: 3 #
+      resources:
+        limits:
+          memory: 2G # 3 x 2GB = max. 6GB RAM
+    # WICHTIG FÜR CHROME IN DOCKER:
+    # Verhindert Abstürze ("Aw, Snap!"), wenn Chrome der Shared Memory (shm) ausgeht.
+    shm_size: '2gb'
+    # Angepasstes Volume: "tmpfs" hält die Temp-Daten im Arbeitsspeicher/isoliert, 
+    # damit die 5 Xvfb-Monitore sich nicht gegenseitig die Lock-Dateien klauen.
+    volumes:
+      - puppeteer_tmp:/tmp
+
+  nginx-lb:
+    image: nginx:latest
+    container_name: fcc-loadbalancer
+    ports:
+      - "8001:8001" # NGINX nimmt Anfragen von n8n entgegen
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - bluecollar-agent
+
+# Wir definieren das benannte Volume für /tmp
+volumes:
+  puppeteer_tmp:
